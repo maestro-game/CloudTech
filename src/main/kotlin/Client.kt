@@ -4,8 +4,10 @@ import com.amazonaws.auth.BasicAWSCredentials
 import com.amazonaws.client.builder.AwsClientBuilder
 import com.amazonaws.services.s3.AmazonS3
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
+import org.ini4j.Wini
 import org.json.JSONObject
 import java.io.File
+import kotlin.system.exitProcess
 
 object Client {
     private val toBase64URL = charArrayOf(
@@ -13,9 +15,10 @@ object Client {
         'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
         'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-', '_')
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-', '_'
+    )
 
-    private val allowedExtensions = listOf("jpg", "jpeg", "png", "bmp", "gif", "svg", "tiff", "ico")
+    private val allowedExtensions = listOf("jpg", "jpeg")//, "png", "bmp", "gif", "svg", "tiff", "ico"
 
     private val s3: AmazonS3
     private val bucket: String
@@ -23,12 +26,23 @@ object Client {
 
 
     init {
-        val json = JSONObject(File("config.txt").readText())
+        val config = Wini(File("config.txt"))
         s3 = AmazonS3ClientBuilder.standard()
-            .withCredentials(AWSStaticCredentialsProvider(BasicAWSCredentials(json.getString("aws_access_key_id"), json.getString("aws_secret_access_key"))))
-            .withEndpointConfiguration(AwsClientBuilder.EndpointConfiguration("storage.yandexcloud.net","ru-central1")
+            .withCredentials(
+                AWSStaticCredentialsProvider(
+                    BasicAWSCredentials(
+                        config["DEFAULT", "aws_access_key_id"],
+                        config["DEFAULT", "aws_secret_access_key"]
+                    )
+                )
+            )
+            .withEndpointConfiguration(
+                AwsClientBuilder.EndpointConfiguration(
+                    config["DEFAULT", "endpoint_url"],
+                    config["DEFAULT", "region"]
+                )
             ).build()
-        bucket = json.getString("bucket")
+        bucket = config["DEFAULT", "bucket"]
         meta = try {
             JSONObject(s3.getObjectAsString(bucket, ".meta"))
         } catch (e: AmazonServiceException) {
@@ -45,14 +59,18 @@ object Client {
         var path = "."
         var album: String? = null
         while (iterator.hasNext()) {
-            when (iterator.next()) {
+            when (val param = iterator.next()) {
                 "--album" -> album = iterator.next()
                 "--path" -> path = iterator.next()
+                else -> {
+                    System.err.println("${rd}Unknown parameter$rs '$param'")
+                    exitProcess(1)
+                }
             }
         }
         if (album == null) {
-            println("${rd}Argument '--album' required$rs")
-            return
+            System.err.println("${rd}Argument '--album' required$rs")
+            exitProcess(1)
         }
 
         val albumEncoded: String
@@ -68,15 +86,12 @@ object Client {
             obj.getJSONObject("p")
         }
         var photoCount = meta.getJSONObject(album).getJSONObject("p").keySet().size + 1
-        val files = File(path).listFiles()
+        val files = File(path).listFiles { file -> file.extension in allowedExtensions }
         if (files.isEmpty()) {
-            println("${rd}Directory $path hasn't any photos$rs")
-            return
+            System.err.println("${rd}Directory $path hasn't any photos$rs")
+            exitProcess(1)
         }
         files.forEach { file ->
-            if (file.extension !in allowedExtensions) {
-                return@forEach
-            }
             var photoEncoded: String = photos.optString(file.name)
             if (photoEncoded.isEmpty()) {
                 photoEncoded = base64enc(photoCount++)
@@ -85,7 +100,7 @@ object Client {
                 s3.putObject(bucket, "$albumEncoded/$photoEncoded", file)
                 println("${gr}Uploaded photo ${file.name}$rs")
             } catch (e: Exception) {
-                println("${rd}File ${file.name} uploaded error: ${e.message}$rs")
+                System.err.println("${rd}File ${file.name} uploading error: ${e.message}$rs")
             }
             photos.put(file.name, photoEncoded)
         }

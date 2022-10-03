@@ -15,6 +15,7 @@ repositories {
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.10.0")
     implementation("org.json:json:20220320")
+    implementation("org.ini4j:ini4j:0.5.4")
     implementation("com.amazonaws:aws-java-sdk-ec2:1.12.314")
     implementation("com.amazonaws:aws-java-sdk-s3:1.12.314")
     implementation("com.amazonaws:aws-java-sdk-dynamodb:1.12.314")

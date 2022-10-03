@@ -4,8 +4,8 @@ import com.amazonaws.auth.BasicAWSCredentials
 import com.amazonaws.client.builder.AwsClientBuilder
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import com.amazonaws.services.s3.model.HeadBucketRequest
-import org.json.JSONObject
 import java.io.File
+import kotlin.system.exitProcess
 
 const val rs = "\u001B[0m"
 const val rd = "\u001B[31m"
@@ -23,13 +23,20 @@ fun main(args: Array<String>) {
         "list" -> {}
         "delete" -> {}
         "mksite" -> {}
-        "init" -> init()
-        else -> { println("${rd}Unknown parameter$rs '$param'"); return }
+        "init" -> init(iterator)
+        else -> {
+            System.err.println("${rd}Unknown command$rs '$param'")
+            exitProcess(1)
+        }
     }
     println("${bl}Photo-archive finished work$rs")
 }
 
-fun init() {
+fun init(iterator: Iterator<String>) {
+    if (iterator.hasNext()) {
+        System.err.println("${rd}command init mustn't have any params${rs}")
+        exitProcess(1)
+    }
     println("${cn}Enter aws_access_key_id:$rs")
     val key = readln()
     println("${cn}Enter aws_secret_access_key:$rs")
@@ -38,19 +45,20 @@ fun init() {
     val bucket = readln()
     val tempS3 = AmazonS3ClientBuilder.standard()
         .withCredentials(AWSStaticCredentialsProvider(BasicAWSCredentials(key, secret)))
-        .withEndpointConfiguration(AwsClientBuilder.EndpointConfiguration("storage.yandexcloud.net","ru-central1")
-    ).build()
+        .withEndpointConfiguration(
+            AwsClientBuilder.EndpointConfiguration("storage.yandexcloud.net", "ru-central1")
+        ).build()
     try {
         tempS3.headBucket(HeadBucketRequest(bucket))
         println("${gr}Bucket was found$rs")
     } catch (e: AmazonServiceException) {
         if (e.statusCode == 403) {
-            println("${rd}You does not have access to this bucket$rs")
-            return
+            System.err.println("${rd}You does not have access to this bucket$rs")
+            exitProcess(1)
         }
         if (e.statusCode == 301) {
-            println("${rd}This bucket is in a different region than the client is configured with$rs")
-            return
+            System.err.println("${rd}This bucket is in a different region than the client is configured with$rs")
+            exitProcess(1)
         }
         if (e.statusCode == 404) {
             tempS3.createBucket(bucket)
@@ -60,9 +68,10 @@ fun init() {
         }
     }
 
-    val json = JSONObject()
-    json.put("aws_access_key_id", key)
-    json.put("aws_secret_access_key", secret)
-    json.put("bucket", bucket)
-    File("config.txt").writeText(json.toString())
+    File("config.txt").writeText("[DEFAULT]\n" +
+            "bucket = $bucket\n" +
+            "aws_access_key_id = $key\n" +
+            "aws_secret_access_key = $secret\n" +
+            "region = ru-central1\n" +
+            "endpoint_url = https://storage.yandexcloud.net")
 }
