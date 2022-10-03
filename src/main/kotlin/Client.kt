@@ -7,6 +7,7 @@ import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import org.ini4j.Wini
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.Executors
 import kotlin.system.exitProcess
 
 object Client {
@@ -22,6 +23,7 @@ object Client {
 
     private val s3: AmazonS3
     private val bucket: String
+    //{<albums>: { n: name, p: { <photos>: realName } }
     private val meta: JSONObject
 
 
@@ -105,6 +107,77 @@ object Client {
             photos.put(file.name, photoEncoded)
         }
         s3.putObject(bucket, ".meta", meta.toString())
+    }
+
+    fun download(iterator: Iterator<String>) {
+        var path = "."
+        var album: String? = null
+        while (iterator.hasNext()) {
+            when (val param = iterator.next()) {
+                "--album" -> album = iterator.next()
+                "--path" -> path = iterator.next()
+                else -> {
+                    System.err.println("${rd}Unknown parameter$rs '$param'")
+                    exitProcess(1)
+                }
+            }
+        }
+        if (album == null) {
+            System.err.println("${rd}Argument '--album' required$rs")
+            exitProcess(1)
+        }
+        val albumJson = meta.getJSONObject(album)
+        val albumEncoded = albumJson.getString("n")
+        val photos = albumJson.getJSONObject("p")
+        val photosReal = photos.keySet()
+        if (photosReal.isEmpty()) {
+            System.err.println("${rd}Album $album hasn't any photos$rs")
+            exitProcess(1)
+        }
+        if (photosReal.size > 7) {
+            val pool = Executors.newFixedThreadPool(4)
+            photosReal.forEach { realName ->
+                pool.execute {
+                    File("$path/$realName").outputStream().use {
+                        s3.getObject(bucket, "$albumEncoded/${photos.get(realName)}").objectContent.copyTo(it)
+                    }
+                }
+            }
+        } else {
+            photosReal.forEach { realName ->
+                File("$path/$realName").outputStream().use {
+                    s3.getObject(bucket, "$albumEncoded/${photos.get(realName)}").objectContent.copyTo(it)
+                }
+            }
+        }
+    }
+
+    fun list(iterator: Iterator<String>) {
+        var album: String? = null
+        while (iterator.hasNext()) {
+            when (val param = iterator.next()) {
+                "--album" -> album = iterator.next()
+                else -> {
+                    System.err.println("${rd}Unknown parameter$rs '$param'")
+                    exitProcess(1)
+                }
+            }
+        }
+        if (album == null) {
+            val albums = meta.keySet()
+            if (albums.isEmpty()) {
+                System.err.println("${rd}No albums found$rs")
+                exitProcess(1)
+            }
+            albums.forEach(::println)
+        } else {
+            val photos = meta.getJSONObject(album).getJSONObject("p").keySet()
+            if (photos.isEmpty()) {
+                System.err.println("${rd}No photos found in album '$album'$rs")
+                exitProcess(1)
+            }
+            photos.forEach(::println)
+        }
     }
 
     private fun base64enc(value: Int): String {

@@ -15,12 +15,11 @@ const val bl = "\u001B[34m"
 const val cn = "\u001B[36m"
 
 fun main(args: Array<String>) {
-    println("${bl}Photo-archive started$rs")
     val iterator = args.iterator()
     when (val param = iterator.next()) {
         "upload" -> Client.upload(iterator)
-        "download" -> {}
-        "list" -> {}
+        "download" -> Client.download(iterator)
+        "list" -> Client.list(iterator)
         "delete" -> {}
         "mksite" -> {}
         "init" -> init(iterator)
@@ -29,7 +28,6 @@ fun main(args: Array<String>) {
             exitProcess(1)
         }
     }
-    println("${bl}Photo-archive finished work$rs")
 }
 
 fun init(iterator: Iterator<String>) {
