@@ -66,7 +66,9 @@ fun init(iterator: Iterator<String>) {
         }
     }
 
-    File("config.txt").writeText("[DEFAULT]\n" +
+    val file = File(System.getProperty("user.home") + "/.config/cloudphoto/")
+    file.mkdirs()
+    File(System.getProperty("user.home") + "/.config/cloudphoto/cloudphotorc").writeText("[DEFAULT]\n" +
             "bucket = $bucket\n" +
             "aws_access_key_id = $key\n" +
             "aws_secret_access_key = $secret\n" +

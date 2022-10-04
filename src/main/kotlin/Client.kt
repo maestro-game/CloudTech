@@ -38,7 +38,7 @@ object Client {
 
 
     init {
-        val config = Wini(File("config.txt"))
+        val config = Wini(File(System.getProperty("user.home") + "/.config/cloudphoto/cloudphotorc"))
         s3 = AmazonS3ClientBuilder.standard()
             .withCredentials(
                 AWSStaticCredentialsProvider(
@@ -263,7 +263,7 @@ object Client {
         temp.process(root, sw)
         metaData.contentLength = sw.buffer.length.toLong()
         s3.putObject(bucket, "index.html", sw.toString().byteInputStream(), metaData)
-        s3.getObjectMetadata(bucket, "index.html")
+        println("https://$bucket.website.yandexcloud.net/")
     }
 
     private fun base64enc(value: Int): String {
