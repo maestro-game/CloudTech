@@ -20,8 +20,8 @@ fun main(args: Array<String>) {
         "upload" -> Client.upload(iterator)
         "download" -> Client.download(iterator)
         "list" -> Client.list(iterator)
-        "delete" -> {}
-        "mksite" -> {}
+        "delete" -> Client.delete(iterator)
+        "mksite" -> Client.mksite(iterator)
         "init" -> init(iterator)
         else -> {
             System.err.println("${rd}Unknown command$rs '$param'")

@@ -4,10 +4,20 @@ import com.amazonaws.auth.BasicAWSCredentials
 import com.amazonaws.client.builder.AwsClientBuilder
 import com.amazonaws.services.s3.AmazonS3
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
+import com.amazonaws.services.s3.model.BucketWebsiteConfiguration
+import com.amazonaws.services.s3.model.CannedAccessControlList
+import com.amazonaws.services.s3.model.ObjectMetadata
+import freemarker.cache.FileTemplateLoader
+import freemarker.template.Configuration
+import freemarker.template.Template
 import org.ini4j.Wini
 import org.json.JSONObject
 import java.io.File
+import java.io.StringWriter
+import java.util.*
 import java.util.concurrent.Executors
+import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
 import kotlin.system.exitProcess
 
 object Client {
@@ -23,7 +33,7 @@ object Client {
 
     private val s3: AmazonS3
     private val bucket: String
-    //{<albums>: { n: name, p: { <photos>: realName } }
+    //{<albumsRealNames>: { n: "encodedName", p: { <photosRealNames>: "encodedName" } }
     private val meta: JSONObject
 
 
@@ -130,11 +140,12 @@ object Client {
         val albumEncoded = albumJson.getString("n")
         val photos = albumJson.getJSONObject("p")
         val photosReal = photos.keySet()
-        if (photosReal.isEmpty()) {
-            System.err.println("${rd}Album $album hasn't any photos$rs")
-            exitProcess(1)
-        }
-        if (photosReal.size > 7) {
+//        if (photosReal.isEmpty()) {
+//            System.err.println("${rd}Album $album hasn't any photos$rs")
+//            exitProcess(1)
+//        }
+        File(path).mkdirs()
+        if (photosReal.size > 3) {
             val pool = Executors.newFixedThreadPool(4)
             photosReal.forEach { realName ->
                 pool.execute {
@@ -178,6 +189,81 @@ object Client {
             }
             photos.forEach(::println)
         }
+    }
+
+    fun delete(iterator: Iterator<String>) {
+        var photo: String? = null
+        var album: String? = null
+        while (iterator.hasNext()) {
+            when (val param = iterator.next()) {
+                "--album" -> album = iterator.next()
+                "--photo" -> photo = iterator.next()
+                else -> {
+                    System.err.println("${rd}Unknown parameter$rs '$param'")
+                    exitProcess(1)
+                }
+            }
+        }
+        if (album == null) {
+            System.err.println("${rd}Argument '--album' required$rs")
+            exitProcess(1)
+        }
+
+        val albumJson = meta.getJSONObject(album)
+        val albumEncoded = albumJson.getString("n")
+        val photos = albumJson.getJSONObject("p")
+        if (photo == null) {
+            photos.keys().forEach {
+                s3.deleteObject(bucket, "$albumEncoded/${photos.getString(it)}")
+            }
+            meta.remove(album)
+        } else {
+            s3.deleteObject(bucket, "$albumEncoded/${photos.getString(photo)}")
+            photos.remove(photo)
+        }
+        s3.putObject(bucket, ".meta", meta.toString())
+    }
+
+    fun mksite(iterator: Iterator<String>) {
+        if (iterator.hasNext()) {
+            System.err.println("${rd}command init mustn't have any params${rs}")
+            exitProcess(1)
+        }
+        s3.setBucketWebsiteConfiguration(bucket, BucketWebsiteConfiguration("index.html", "error.html"))
+        s3.setBucketAcl(bucket, CannedAccessControlList.PublicRead)
+
+        val cfg = Configuration(Configuration.VERSION_2_3_27)
+        cfg.templateLoader = FileTemplateLoader(File("src/main/resources"))
+        cfg.setEncoding(Locale.ROOT, "UTF-8")
+        cfg.outputEncoding = "UTF-8"
+        val root: MutableMap<String, Any> = HashMap()
+        val metaData = ObjectMetadata()
+        metaData.contentType = "text/html"
+
+        var count = 0
+        meta.keys().forEach {
+            val temp: Template = cfg.getTemplate("album.ftlh")
+            temp.outputEncoding = "UTF-8"
+            val sw = StringWriter()
+            val list = ArrayList<Pair<String, String>>()
+            val photos = meta.getJSONObject(it).getJSONObject("p")
+            photos.keys().forEach { photo ->
+                list.add(Pair("${meta.getJSONObject(it).getString("n")}/${photos.getString(photo)}", photo))
+            }
+            root["photos"] = list
+            temp.process(root, sw)
+            metaData.contentLength = sw.buffer.length.toLong()
+            s3.putObject(bucket, "album${count++}.html", sw.toString().byteInputStream(), metaData)
+        }
+        root.clear()
+        root["albums"] = meta.keySet()
+        val temp: Template = cfg.getTemplate("index.ftlh")
+        temp.outputEncoding = "UTF-8"
+        val sw = StringWriter()
+        temp.process(root, sw)
+        metaData.contentLength = sw.buffer.length.toLong()
+        s3.putObject(bucket, "index.html", sw.toString().byteInputStream(), metaData)
+        s3.getObjectMetadata(bucket, "index.html")
     }
 
     private fun base64enc(value: Int): String {

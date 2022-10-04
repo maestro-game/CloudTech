@@ -19,6 +19,7 @@ dependencies {
     implementation("com.amazonaws:aws-java-sdk-ec2:1.12.314")
     implementation("com.amazonaws:aws-java-sdk-s3:1.12.314")
     implementation("com.amazonaws:aws-java-sdk-dynamodb:1.12.314")
+    implementation("org.freemarker:freemarker:2.3.31")
 }
 
 tasks.jar {
